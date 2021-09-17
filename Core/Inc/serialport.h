@@ -3,6 +3,11 @@
 
 #include "stm32f4xx_hal.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 #define SERIAL_RX_BUF_SIZE	50
 #define SERIAL_TX_BUF_SIZE 2000
 
@@ -26,5 +31,9 @@ void SerialportRxCallback();
 void SerialportTxCallback();
 uint8_t SerialportWrite(uint8_t *data, uint16_t length);
 uint8_t* SerialportReadLine(uint16_t *length);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

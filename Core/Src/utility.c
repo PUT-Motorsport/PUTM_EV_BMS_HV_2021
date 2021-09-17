@@ -8,6 +8,7 @@
 #include "utility.h"
 #include "main.h"
 
+
 /*
  * brief:	Sets output for selected LED
  * param:	led_no	selected led 1,2,3
@@ -16,9 +17,9 @@
  */
 void LedSet(uint8_t led_no, uint8_t state)
 {
-	if (led_no == 1) HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, state);
-	else if (led_no == 2) HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, state);
-	else if (led_no == 3) HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, state);
+	if (led_no == 1) HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, (GPIO_PinState)state);
+	else if (led_no == 2) HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, (GPIO_PinState)state);
+	else if (led_no == 3) HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, (GPIO_PinState)state);
 }
 
 /*
@@ -59,7 +60,7 @@ uint8_t SafetyStateRead()
  */
 void FaultOutputSet(uint8_t state)
 {
-	HAL_GPIO_WritePin(AMS_FAULT_MCU_GPIO_Port, AMS_FAULT_MCU_Pin, state);
+	HAL_GPIO_WritePin(AMS_FAULT_MCU_GPIO_Port, AMS_FAULT_MCU_Pin, (GPIO_PinState)state);
 }
 
 /*
@@ -69,7 +70,7 @@ void FaultOutputSet(uint8_t state)
  */
 void AIR_MINUS_Set(uint8_t state)
 {
-	HAL_GPIO_WritePin(AIR_MINUS_GPIO_Port, AIR_MINUS_Pin, state);
+	HAL_GPIO_WritePin(AIR_MINUS_GPIO_Port, AIR_MINUS_Pin, (GPIO_PinState)state);
 }
 
 /*
@@ -79,7 +80,7 @@ void AIR_MINUS_Set(uint8_t state)
  */
 void AIR_PLUS_Set(uint8_t state)
 {
-	HAL_GPIO_WritePin(AIR_PLUS_GPIO_Port, AIR_PLUS_Pin, state);
+	HAL_GPIO_WritePin(AIR_PLUS_GPIO_Port, AIR_PLUS_Pin, (GPIO_PinState)state);
 }
 
 /*
@@ -89,5 +90,5 @@ void AIR_PLUS_Set(uint8_t state)
  */
 void AIR_PRECHARGE_Set(uint8_t state)
 {
-	HAL_GPIO_WritePin(AIR_PRE_GPIO_Port, AIR_PRE_Pin, state);
+	HAL_GPIO_WritePin(AIR_PRE_GPIO_Port, AIR_PRE_Pin, (GPIO_PinState)state);
 }

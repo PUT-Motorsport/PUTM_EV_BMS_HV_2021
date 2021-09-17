@@ -8,6 +8,9 @@
 #include "serialport.h"
 #include "stdlib.h"
 
+
+
+
 static struct serialport_type serialport;
 
 void SerialportOpen(UART_HandleTypeDef *huart)
@@ -113,3 +116,6 @@ uint8_t* SerialportReadLine(uint16_t *length)
 
 	return retline;
 }
+
+
+

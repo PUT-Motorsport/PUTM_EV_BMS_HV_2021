@@ -3,6 +3,11 @@
 
 #include "main.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 #define LTCS_IN_STACK	15
 
 #define LTC_ADC_MD		0b11
@@ -83,4 +88,11 @@ uint8_t LtcGetStackError();
 
 void LtcStackSummary();
 
+#ifdef __cplusplus
+}
 #endif
+
+#endif
+
+
+

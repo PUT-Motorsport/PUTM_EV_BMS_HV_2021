@@ -1,6 +1,10 @@
 #include "main.h"
 #include "ltc_stack.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct stack_data_type stack_data;
 
 static SPI_HandleTypeDef *hspi;
@@ -22,7 +26,7 @@ static uint8_t rx_buffer[4 + 8 * LTCS_IN_STACK];
 
 // ltc reading to temperature
 static int16_t temperature_map[29][2] = {
-//		ltc value ,  temperature *C
+		//		ltc value ,  temperature *C
 		{27190	,	-20} ,
 		{26380	,	-15} ,
 		{25400	,	-10} ,
@@ -345,10 +349,10 @@ void LtcReadGpio(uint8_t group)
 			stack_data.temperatures[1 + dev*3] = LtcCalculateTemperature(gpio_voltage[1]);
 			stack_data.temperatures[2 + dev*3] = LtcCalculateTemperature(gpio_voltage[2]);
 		}
-//		else if (group == 1) // 4,5, 2nd ref
-//		{
-//
-//		}
+		//		else if (group == 1) // 4,5, 2nd ref
+		//		{
+		//
+		//		}
 	}
 }
 
@@ -485,10 +489,10 @@ int16_t LtcCalculateTemperature(uint16_t gpio_voltage)
 		{
 			// approximation
 			result = (float)(temperature_map[i][1])
-					-
-					5.0 * ((float)gpio_voltage-(float)(temperature_map[i][0]))
-					/
-					((float)(temperature_map[i-1][0]) - (float)(temperature_map[i][0]));
+							-
+							5.0 * ((float)gpio_voltage-(float)(temperature_map[i][0]))
+							/
+							((float)(temperature_map[i-1][0]) - (float)(temperature_map[i][0]));
 			break;
 		}
 	}
@@ -551,3 +555,7 @@ void LtcStackSummary()
 	}
 	stack_data.temperature_max = temp_max;
 }
+
+#ifdef __cplusplus
+}
+#endif
