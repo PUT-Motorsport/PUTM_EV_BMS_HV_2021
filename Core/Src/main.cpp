@@ -28,6 +28,7 @@
 #include "utility.h"
 #include "stdio.h"
 #include "ltc_stack.h"
+#include "soc_ekf.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -154,6 +155,19 @@ extern struct stack_data_type stack_data;
 volatile uint8_t global_stack_fault = 0;
 
 uint8_t can_mode = CANBUS_MODE_CAR;
+
+// ------ SOC
+float Batt_model_EPA642128HP[] = { 0.0028, 7.746989, 50.867289, 0.005505, 0.009222, 7.254};
+const unsigned int Batt_model_length = sizeof(Batt_model_EPA642128HP) / sizeof(Batt_model_EPA642128HP[0]);
+static_assert(6 == Batt_model_length, "invalid battery model");
+
+const float OCV_poly_EPA642128HP[] = {-15155.047856, 103529.522834, -311035.126560, 542047.009130, -608536.117000,
+									  462164.931617, -242600.493645, 88307.143064, -22000.025647, 3631.414052,
+								      -374.018295, 21.868083, 3.148197 };
+const unsigned int EPA642128HP_ocv_length = sizeof(OCV_poly_EPA642128HP) / sizeof(OCV_poly_EPA642128HP[0]);
+static_assert(SOC_OCV_poli_coeff_lenght == EPA642128HP_ocv_length, "invalid number of coef in soc-ocv polynomial");
+
+SoC_EKF stack_soc;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -184,6 +198,9 @@ void SdSaveProcess();
 
 void ConsoleSimple();
 void CanbusThread();
+
+// SOC
+void SocInit();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -550,6 +567,21 @@ void CanbusThread()
 	}
 }
 
+/*
+ *
+ */
+void SocInit()
+{
+    stack_soc.set_single_cell_equivalent_model(Batt_model_EPA642128HP);
+    stack_soc.set_single_cell_ocv_polinomial(OCV_poly_EPA642128HP, EPA642128HP_ocv_length);
+    stack_soc.set_battery_configuration(1, 2);
+    stack_soc.set_time_sampling(1.0f / 20.0f); // 20Hz
+    stack_soc.set_update_matrix();
+
+    // set from backup
+    stack_soc.set_initial_SoC(0.5);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -605,6 +637,8 @@ int main(void)
   SerialportOpen(&huart1);
 
   LtcInit(&hspi2, SPI2_CS1_GPIO_Port, SPI2_CS1_Pin);
+
+  SocInit();
 
   // timer for main threading
   HAL_TIM_Base_Start_IT(&htim9);

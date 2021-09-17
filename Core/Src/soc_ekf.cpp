@@ -87,7 +87,7 @@ void SoC_EKF::update_SoC_based_on_voltage(const float &Voltage)
 {
 	// set low observation noice covariance to calculate faster voltage soc prediction
 	set_filter_covariance(1);
-	for(int i=0; i<5000000; ++i){
+	for(int i=0; i<5000; ++i){
 		update(0, Voltage);
 	}
 	set_filter_covariance();
@@ -164,7 +164,10 @@ void init(){
     // example use
     float volatage, current;
     soc.update(current, volatage);
+    // init when soc not known
     soc.update_SoC_based_on_voltage(volatage);
+    // get cos value
+    float soc = soc.get_SoC();
 }
 
 
