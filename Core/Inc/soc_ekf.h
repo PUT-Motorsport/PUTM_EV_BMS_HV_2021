@@ -5,9 +5,9 @@
 #include <math.h>
 const unsigned int SOC_OCV_poli_coeff_lenght = 13;
 
-const float default_R_value = 50000; // observation noise covariance
+const float default_R_value = 50000; // observation noice covariance
 const float charge_R_value_multiplier = 10e5;
-const float default_Q_value = 0.0002; // process noise covariance
+const float default_Q_value = 0.0002; // proces noice covariance
 
 enum batt{
     Rs,    // in Ohms
@@ -30,9 +30,9 @@ float horner(const float *arry,unsigned int n, const float *x);
 struct Battery_characteristic{
     unsigned int cell_in_parallel = 1;
     unsigned int cell_in_series = 1;
-    float battery_equivalent_model[6];
-    float battery_ocv_poli[SOC_OCV_poli_coeff_lenght];
-    float battery_d_ocv_poli[SOC_OCV_poli_coeff_lenght];
+    float battery_equivalent_model[6] = {0};
+    float battery_ocv_poli[SOC_OCV_poli_coeff_lenght] ={0};
+    float battery_d_ocv_poli[SOC_OCV_poli_coeff_lenght] = {0};
 };
 
 
@@ -51,9 +51,10 @@ private:
     float _R_coeff;
     float _Q_matrix[3];
     float _State_vector[3];
-
+    void update(const float &Current, const float &Voltage, bool charge_coef_change);
 
 public:
+    // to follow rule of 0
     //SoC_EKF() = default;
 
     /* Battery model represented in Two Time Constatant model */
