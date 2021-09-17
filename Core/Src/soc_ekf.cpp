@@ -167,7 +167,7 @@ void init(){
     // init when soc not known
     soc.update_SoC_based_on_voltage(volatage);
     // get cos value
-    float soc = soc.get_SoC();
+    float soc_value = soc.get_SoC();
 }
 
 

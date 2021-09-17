@@ -148,6 +148,8 @@ uint16_t sd_buffer_tail = 0;
 uint16_t sd_bytes_to_write = 0;
 uint32_t aaa_us_cntr = 0;
 
+uint32_t test_time = 0;
+
 //float voltages[10*DAISY_SIZE];
 
 extern struct stack_data_type stack_data;
@@ -579,7 +581,11 @@ void SocInit()
     stack_soc.set_update_matrix();
 
     // set from backup
-    stack_soc.set_initial_SoC(0.5);
+    htim1.Instance->CNT = 0;
+    test_time = 0;
+    stack_soc.update_SoC_based_on_voltage(3.8100f);
+    test_time =  htim1.Instance->CNT;
+    ;
 }
 
 /* USER CODE END 0 */
@@ -835,7 +841,7 @@ static void MX_CAN1_Init(void)
 
   /* USER CODE END CAN1_Init 1 */
   hcan1.Instance = CAN1;
-  hcan1.Init.Prescaler = 9;
+  hcan1.Init.Prescaler = 18;
   hcan1.Init.Mode = CAN_MODE_NORMAL;
   hcan1.Init.SyncJumpWidth = CAN_SJW_1TQ;
   hcan1.Init.TimeSeg1 = CAN_BS1_3TQ;
