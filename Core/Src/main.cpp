@@ -150,6 +150,7 @@ uint32_t aaa_us_cntr = 0;
 
 uint32_t test_time = 0;
 
+float test_soc = 0.0f;
 //float voltages[10*DAISY_SIZE];
 
 extern struct stack_data_type stack_data;
@@ -524,6 +525,12 @@ void ConsoleSimple()
 	}
 	string[n++] = '\r';
 	string[n++] = '\n';
+	for (int i = 0; i < 9; i++)
+	{
+		n += sprintf(&string[n], "%d\t", stack_data.temperatures[i]);
+	}
+	string[n++] = '\r';
+	string[n++] = '\n';
 
 	SerialportWrite((uint8_t*)string, n);
 }
@@ -552,7 +559,8 @@ void CanbusThread()
 		if (temp_can > 127) temp_can = 127;
 		data[4] = temp_can;
 		// state of charge
-		data[5] = 0;
+		uint8_t soc_uint = (uint8_t)(stack_soc.get_SoC() * 100);
+		data[5] = soc_uint;
 		// status
 		data[6] = 0;
 		// errors
@@ -579,12 +587,21 @@ void SocInit()
     stack_soc.set_battery_configuration(1, 2);
     stack_soc.set_time_sampling(1.0f / 20.0f); // 20Hz
     stack_soc.set_update_matrix();
+    stack_soc.set_full_battery();
 
     // set from backup
     htim1.Instance->CNT = 0;
     test_time = 0;
-    stack_soc.update_SoC_based_on_voltage(3.8100f);
+    stack_soc.update_SoC_based_on_voltage(3.8000f);
     test_time =  htim1.Instance->CNT;
+    ;
+    htim1.Instance->CNT = 0;
+    stack_soc.update(0.0, 3.00);
+    stack_soc.update(0.10, 3.30);
+    stack_soc.update(0.0, 3.00);
+    stack_soc.update(0.10, 3.30);
+    test_time = htim1.Instance->CNT;
+    test_soc = stack_soc.get_SoC();
     ;
 }
 
@@ -653,6 +670,15 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  int i = 0;
+  while(1)
+  {
+	  HAL_Delay(200);
+	  memset(&stack_data.discharge[0], 0, 27);
+	  stack_data.discharge[i++] = 1;
+	  i %= 27;
+  }
+
   uint32_t next_tick = 1000;
   char test_string[1100] = {0};
   while (1)
@@ -841,7 +867,7 @@ static void MX_CAN1_Init(void)
 
   /* USER CODE END CAN1_Init 1 */
   hcan1.Instance = CAN1;
-  hcan1.Init.Prescaler = 18;
+  hcan1.Init.Prescaler = 9;
   hcan1.Init.Mode = CAN_MODE_NORMAL;
   hcan1.Init.SyncJumpWidth = CAN_SJW_1TQ;
   hcan1.Init.TimeSeg1 = CAN_BS1_3TQ;

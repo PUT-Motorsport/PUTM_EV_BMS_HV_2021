@@ -25,7 +25,7 @@ static uint8_t tx_buffer[4 + 8 * LTCS_IN_STACK];
 static uint8_t rx_buffer[4 + 8 * LTCS_IN_STACK];
 
 // ltc reading to temperature
-static int16_t temperature_map[29][2] = {
+static const int16_t temperature_map[29][2] = {
 		//		ltc value ,  temperature *C
 		{27190	,	-20} ,
 		{26380	,	-15} ,
@@ -245,7 +245,7 @@ void LtcStartAdcGpio()
 void LtcStartReadCell(uint8_t group)
 {
 	uint16_t pec;
-	uint16_t cmd;
+	uint16_t cmd = 0;
 	if (group == 0) cmd = 0b100;
 	else if (group == 1) cmd = 0b110;
 	else if (group == 2) cmd = 0b1000;
