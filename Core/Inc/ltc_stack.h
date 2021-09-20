@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 
-#define LTCS_IN_STACK	3
+#define LTCS_IN_STACK	15
 
 #define LTC_ADC_MD		0b11
 #define LTC_ADC_DCP		0b0

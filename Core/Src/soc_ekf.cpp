@@ -99,9 +99,9 @@ void SoC_EKF::update_SoC_based_on_voltage(const float &Voltage)
     set_time_sampling(2000.0f);
     set_update_matrix();
 
-    set_filter_covariance(0.1);
+    set_filter_covariance(1);
 
-    for(int i=0; i<1000; ++i){
+    for(int i=0; i<500; ++i){
         update(0, Voltage, false);
     }
     set_filter_covariance();
@@ -111,7 +111,7 @@ void SoC_EKF::update_SoC_based_on_voltage(const float &Voltage)
 
 void SoC_EKF::set_single_cell_equivalent_model(const float *battery_model){
     std::copy(battery_model, battery_model+6, _battery.battery_equivalent_model);
-}
+};
 
 void SoC_EKF::set_initial_SoC(float aSoC){
     _State_vector[SoC] = aSoC;
@@ -120,16 +120,16 @@ void SoC_EKF::set_initial_SoC(float aSoC){
 void SoC_EKF::set_full_battery()
 {
     _State_vector[SoC] = 1.00f;
-}
+};
 
 void SoC_EKF::set_time_sampling(float Ts){
     _Ts = Ts;
-}
+};
 
 void SoC_EKF::set_battery_configuration(unsigned int &&s, unsigned int &&p){
     _battery.cell_in_parallel = p;
     _battery.cell_in_series = s;
-}
+};
 
 void SoC_EKF::set_single_cell_ocv_polinomial(const float *battery_ocv, unsigned int number_of_coef){
 
@@ -138,7 +138,7 @@ void SoC_EKF::set_single_cell_ocv_polinomial(const float *battery_ocv, unsigned 
     for(unsigned int ocv_poly_iter = 0; ocv_poly_iter < number_of_coef - 1; ocv_poly_iter++){
         _battery.battery_d_ocv_poli[ocv_poly_iter] = static_cast<float>(number_of_coef - ocv_poly_iter - 1) * battery_ocv[ocv_poly_iter];
     }
-}
+};
 
 void debug_display(){
     //    std::cout<<"Voltage "<< _battery.cell_in_parallel <<std::endl;
@@ -176,7 +176,6 @@ void init(){
     soc.set_battery_configuration(1, 2);
     soc.set_time_sampling(1.0f / 20.0f); // 20Hz
     soc.set_update_matrix();
-    soc.set_full_battery();
 
     // example use
     float volatage, current;
