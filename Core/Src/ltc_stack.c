@@ -121,7 +121,7 @@ void LtcWakeupSleep()
 {
 	uint8_t tab[2] = {0xff};
 
-	for (int i = 0; i < 4; i++)
+	for (int i = 0; i < 8; i++)
 	{
 		LtcCsPinSet(0);
 		HAL_SPI_Transmit(hspi, tab, 2, 1);
@@ -137,6 +137,7 @@ void LtcWakeupIdle()
 {
 	tx_buffer[0] = 0x00;
 	LtcCsPinSet(0);
+	tx_busy = 1;
 	HAL_SPI_Transmit_IT(hspi, tx_buffer, 1);
 }
 
@@ -199,8 +200,8 @@ void LtcSendConfig(uint8_t discharge_activation)
 	}
 
 	LtcCsPinSet(0);
-	HAL_SPI_Transmit_IT(hspi, tx_buffer, 4 + LTCS_IN_STACK*8);
 	tx_busy = 1;
+	HAL_SPI_Transmit_IT(hspi, tx_buffer, 4 + LTCS_IN_STACK*8);
 }
 
 /*
@@ -217,8 +218,8 @@ void LtcStartAdcCell()
 	tx_buffer[3] = pec;
 
 	LtcCsPinSet(0);
-	HAL_SPI_Transmit_IT(hspi, tx_buffer, 4);
 	tx_busy = 1;
+	HAL_SPI_Transmit_IT(hspi, tx_buffer, 4);
 }
 
 /*
@@ -236,8 +237,8 @@ void LtcStartAdcGpio()
 	tx_buffer[3] = pec;
 
 	LtcCsPinSet(0);
-	HAL_SPI_Transmit_IT(hspi, tx_buffer, 4);
 	tx_busy = 1;
+	HAL_SPI_Transmit_IT(hspi, tx_buffer, 4);
 }
 
 /*
@@ -259,8 +260,8 @@ void LtcStartReadCell(uint8_t group)
 	tx_buffer[3] = pec;
 
 	LtcCsPinSet(0);
-	HAL_SPI_TransmitReceive_IT(hspi, tx_buffer, rx_buffer, 4 + LTCS_IN_STACK*8);
 	tx_busy = 1;
+	HAL_SPI_TransmitReceive_IT(hspi, tx_buffer, rx_buffer, 4 + LTCS_IN_STACK*8);
 }
 
 /*
@@ -280,8 +281,8 @@ void LtcStartReadGpio(uint8_t group)
 	tx_buffer[3] = pec;
 
 	LtcCsPinSet(0);
-	HAL_SPI_TransmitReceive_IT(hspi, tx_buffer, rx_buffer, 4 + LTCS_IN_STACK*8);
 	tx_busy = 1;
+	HAL_SPI_TransmitReceive_IT(hspi, tx_buffer, rx_buffer, 4 + LTCS_IN_STACK*8);
 }
 
 /*

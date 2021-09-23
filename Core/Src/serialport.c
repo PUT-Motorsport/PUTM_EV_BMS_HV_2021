@@ -38,7 +38,6 @@ void SerialportTxCallback()
 {
 	serialport.tx_tail += serialport.tx_length;
 	serialport.tx_tail %= SERIAL_TX_BUF_SIZE;
-	serialport.tx_busy = 0;
 
 	if (serialport.tx_head != serialport.tx_tail)
 	{
@@ -50,13 +49,14 @@ void SerialportTxCallback()
 		serialport.tx_busy = 1;
 		HAL_UART_Transmit_IT(serialport.huart, &serialport.tx_buffer[serialport.tx_tail], serialport.tx_length);
 	}
+	else serialport.tx_busy = 0;
 }
 
 uint8_t SerialportWrite(uint8_t *data, uint16_t length)
 {
 	uint8_t retval = 0;
 	uint16_t free_tx = 0;
-	if (serialport.tx_head > serialport.tx_tail) free_tx = serialport.tx_head - serialport.tx_tail;
+	if (serialport.tx_head > serialport.tx_tail) free_tx = SERIAL_TX_BUF_SIZE - serialport.tx_head;
 	else if (serialport.tx_head < serialport.tx_tail) free_tx = SERIAL_TX_BUF_SIZE - serialport.tx_tail - serialport.tx_head;
 	else free_tx = SERIAL_TX_BUF_SIZE;
 
@@ -78,15 +78,15 @@ uint8_t SerialportWrite(uint8_t *data, uint16_t length)
 			serialport.tx_length = SERIAL_TX_BUF_SIZE - serialport.tx_tail;
 
 		serialport.tx_busy = 1;
-		HAL_UART_Transmit_IT(serialport.huart, &serialport.tx_buffer[serialport.tx_tail], serialport.tx_length);
+		HAL_UART_Transmit_IT(serialport.huart, &(serialport.tx_buffer[serialport.tx_tail]), serialport.tx_length);
 	}
 
 	return retval;
 }
 
-uint8_t* SerialportReadLine(uint16_t *length)
+char* SerialportReadLine(uint16_t *length)
 {
-	uint8_t *retline = NULL;
+	char *retline = NULL;
 	*length = 0;
 	if (serialport.rx_tail != serialport.rx_head)
 	{
@@ -94,7 +94,7 @@ uint8_t* SerialportReadLine(uint16_t *length)
 		while (search_head != serialport.rx_head)
 		{
 			len++;
-			if (serialport.rx_buffer[search_head] == (uint8_t)'\n')
+			if (serialport.rx_buffer[search_head] == '\n')
 			{
 				retline = malloc(len);
 				if (retline != NULL)

@@ -162,9 +162,7 @@ float test_soc = 0.0f;
 
 extern struct stack_data_type stack_data;
 
-volatile uint8_t global_stack_fault = 0;
-
-uint8_t can_mode = CANBUS_MODE_CAR;
+//volatile uint8_t global_stack_fault = 0;
 
 // ------ SOC
 float Batt_model_EPA642128HP[] = { 0.0028, 7.746989, 50.867289, 0.005505, 0.009222, 7.254};
@@ -191,6 +189,7 @@ bool charger_recv_ov_temp = false;
 bool charger_recv_in_volt = false;
 bool charger_recv_starting_state = false;
 bool charger_recv_comm_state = false;
+bool charger_comm_ok = false;
 uint32_t charger_recv_tick;
 /* USER CODE END PV */
 
@@ -220,6 +219,7 @@ void FaultThread();
 void SdInitFile();
 void SdSaveProcess();
 void UpdateSoc();
+void ConsoleRxThread();
 
 void ConsoleSimple();
 void CanbusThread();
@@ -249,7 +249,6 @@ void CAN_Init_Charger()
 	  {
 	    Error_Handler();
 	  }
-	  can_mode = CANBUS_MODE_CHARGER;
 }
 
 void AnalogInit(ADC_HandleTypeDef *hadc, TIM_HandleTypeDef *htim)
@@ -538,12 +537,27 @@ void FaultThread()
 	}
 }
 
+void ConsoleRxThread()
+{
+	char *line = NULL;
+	uint16_t len = 0;
+	line = SerialportReadLine(&len);
+	if (len != 0 && line != NULL)
+	{
+		if (strcmp(line, "charger_start\r\n") == 0) charger_target_start = true;
+		else if (strcmp(line, "charger_stop\r\n") == 0) charger_target_start = false;
+	}
+
+	if (line != NULL) free(line);
+}
+
 void ConsoleSimple()
 {
-	static uint32_t last_data_tick = 0;
-	if (last_data_tick == stack_data.data_refresh_tick) return;
+	static uint32_t next_refresh_tick = 1000;
+	if (next_refresh_tick > HAL_GetTick()) return;
 
-	last_data_tick = stack_data.data_refresh_tick;
+	//last_data_tick = stack_data.data_refresh_tick;
+	next_refresh_tick += 500;
 
 	char string[1000], dis_char;
 	uint16_t n = 0;
@@ -561,7 +575,10 @@ void ConsoleSimple()
 //	}
 //	string[n++] = '\r';
 //	string[n++] = '\n';
-	n += sprintf(&string[n], "-nr-\tc1\tc2\tc3\tc4\tc5\tc6\tc7\tc8\tc9\tt1\tt2\tt3\r\n");
+	// clear screen
+	//n += sprintf(&string[n], "\033[2J");
+	// display CELLS AND TEMPERATURES
+	n += sprintf(&string[n], "-no-\tc1\tc2\tc3\tc4\tc5\tc6\tc7\tc8\tc9\tt1\tt2\tt3\r\n");
 	for (int dev = 0; dev < LTCS_IN_STACK; dev++)
 	{
 		n += sprintf(&string[n], "-%02d-\t", dev+1);
@@ -579,8 +596,33 @@ void ConsoleSimple()
 		string[n++] = '\n';
 	}
 	dis_char = '%';
-	n += sprintf(&string[n], "SOC\t%d%c\r\n", (uint16_t)(stack_soc.get_SoC()*1000.0f), dis_char);
+	n += sprintf(&string[n], "SOC\t%d.%02d%c\r\n", (uint16_t)(stack_soc.get_SoC()*100.0f), ((uint16_t)(stack_soc.get_SoC()*10000.0f))%100, dis_char);
+	if (LtcGetStackError() != 0)
+		n += sprintf(&string[n], "ERR\t%d\r\n", LtcGetStackError());
+	n += sprintf(&string[n], "ADC\t");
+	n += sprintf(&string[n], "%d.%01dV\t", (uint16_t)output_voltage_volt, ((uint16_t)output_voltage_volt * 10) % 10);
+	n += sprintf(&string[n], "%d.%01dA", (int16_t)output_current_ampere, ((int16_t)output_current_ampere * 10) % 10);
+	string[n++] = '\r';
+	string[n++] = '\n';
+	if (charger_mode)
+	{
+		if (charger_comm_ok)
+		{
+			if (charger_target_start)
+				n += sprintf(&string[n], "CHARGER ON  ");
+			else
+				n += sprintf(&string[n], "CHARGER OFF ");
+			n += sprintf(&string[n], "%d.%01dV ", (uint16_t)charger_recv_voltage, ((uint16_t)charger_recv_voltage*10)%10);
+			n += sprintf(&string[n], "%d.%01dA", (uint16_t)charger_recv_current, ((uint16_t)charger_recv_current*10)%10);
+		}
+		else
+		{
+			n += sprintf(&string[n], "CHARGER CAN ERROR");
+		}
+		string[n++] = '\r';
+		string[n++] = '\n';
 
+	}
 	string[n++] = '\r';
 	string[n++] = '\n';
 
@@ -670,6 +712,7 @@ void CanbusThread()
 				charger_recv_starting_state = data[4] & 0x08;
 				charger_recv_comm_state = data[4] & 0x10;
 				charger_recv_tick = HAL_GetTick();
+				charger_comm_ok = true;
 			}
 		}
 
@@ -685,6 +728,7 @@ void CanbusThread()
 			charger_recv_tick = HAL_GetTick();
 			// fault state, stop charging
 			charger_target_start = false;
+			charger_comm_ok = false;
 		}
 	}
 }
@@ -791,6 +835,20 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  uint32_t dis_test_next = 2000, dis = 0;
+  while (1)
+  {
+	  if (dis_test_next < HAL_GetTick() && false)
+	  {
+		  dis_test_next += 200;
+		  dis += 1;
+		  dis %= 9;
+		  memset(stack_data.discharge, 0, 9 * LTCS_IN_STACK);
+		  for (int i = 0; i < LTCS_IN_STACK; i++)
+			  stack_data.discharge[i*9+dis] = 1;
+	  }
+  }
+
   uint32_t next_tick = 1000;
   char test_string[1100] = {0};
   while (1)

@@ -30,7 +30,7 @@ void SerialportOpen(UART_HandleTypeDef *huart);
 void SerialportRxCallback();
 void SerialportTxCallback();
 uint8_t SerialportWrite(uint8_t *data, uint16_t length);
-uint8_t* SerialportReadLine(uint16_t *length);
+char* SerialportReadLine(uint16_t *length);
 
 #ifdef __cplusplus
 }
