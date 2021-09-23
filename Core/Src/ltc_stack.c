@@ -105,6 +105,7 @@ void LtcInit(SPI_HandleTypeDef *ltc_hspi, GPIO_TypeDef *ltc_cs_gpio, uint16_t lt
 	hspi = ltc_hspi;
 	cs_gpio = ltc_cs_gpio;
 	cs_pin = ltc_cs_pin;
+	stack_data.minimum_cell_no = -1;
 
 	LtcInitPec15Table();
 
@@ -405,7 +406,7 @@ void LtcCommunicationThread()
 	else if (comm_state == 2)
 	{
 		LtcStartAdcCell();
-		comm_next_tick += LTC_ADC_DELAY;
+		comm_next_tick = HAL_GetTick() + LTC_ADC_DELAY;
 		comm_state++;
 	}
 	else if (comm_state == 3)
@@ -424,7 +425,7 @@ void LtcCommunicationThread()
 	else if (comm_state == 5)
 	{
 		LtcStartAdcGpio();
-		comm_next_tick += LTC_ADC_DELAY;
+		comm_next_tick = HAL_GetTick() + LTC_ADC_DELAY;
 		comm_state++;
 	}
 	else if (comm_state == 6)
@@ -540,14 +541,19 @@ uint8_t LtcGetStackError()
  */
 void LtcStackSummary()
 {
-	uint32_t voltage_sum = 0, minimum = UINT16_MAX;
+	uint32_t voltage_sum = 0, minimum = UINT16_MAX, minimum_cell_no = -1;
 	for (int cv = 0; cv < LTCS_IN_STACK*9; cv++)
 	{
 		voltage_sum += stack_data.voltages[cv];
-		if (stack_data.voltages[cv] < minimum && stack_data.voltages[cv] != 0) minimum = stack_data.voltages[cv];
+		if (stack_data.voltages[cv] < minimum && stack_data.voltages[cv] != 0)
+		{
+			minimum = stack_data.voltages[cv];
+			minimum_cell_no = cv;
+		}
 	}
 	stack_data.total_voltage_mv = voltage_sum;
 	stack_data.cell_minimum_voltage = minimum;
+	if (stack_data.minimum_cell_no == -1) stack_data.minimum_cell_no = minimum_cell_no;
 	int16_t temp_max = -1000;
 	for (int ct = 0; ct < LTCS_IN_STACK*3; ct++)
 	{

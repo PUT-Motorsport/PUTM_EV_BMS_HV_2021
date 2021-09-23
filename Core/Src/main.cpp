@@ -79,11 +79,12 @@ struct accumulator_result_type{
 //	uint8_t rx_ready;
 //};
 
+#define ADC_BUFFER_SIZE 800
 struct analog_type{
 	ADC_HandleTypeDef *hadc;
 	TIM_HandleTypeDef *htim;
 
-	uint16_t raw_buf[400*4];
+	uint16_t raw_buf[ADC_BUFFER_SIZE * 4];
 	uint16_t raw_tail;
 
 	struct analog_result_type result_buf[10];
@@ -96,9 +97,15 @@ struct analog_type{
 /* USER CODE BEGIN PD */
 #define COEFF_VOLT_PER_ADC		1.7241f	// L 10k, 22k; H 200k, 10k
 #define COEFF_AMPERE_PER_ADC	0.12891f
+#define ADC_AVERAGE_SAMPLES	200
+
 
 #define CANBUS_MODE_CAR		0x01
 #define CANBUS_MODE_CHARGER	0x02
+
+#define PRECHARGE_TIME_MS	5000
+
+#define CHARGER_CAN_TIMEOUT_MS	10000
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -132,8 +139,8 @@ struct analog_type analog;
 
 uint16_t analog_avg[4];
 uint16_t analog_max;
-uint16_t output_voltage;
-int16_t output_current;
+float output_voltage_volt;
+float output_current_ampere;
 
 uint8_t sd_log_activated;
 char filename[50];
@@ -171,6 +178,20 @@ const unsigned int EPA642128HP_ocv_length = sizeof(OCV_poly_EPA642128HP) / sizeo
 static_assert(SOC_OCV_poli_coeff_lenght == EPA642128HP_ocv_length, "invalid number of coef in soc-ocv polynomial");
 
 SoC_EKF stack_soc;
+bool stack_soc_first_flag = false;
+
+bool charger_mode = false;
+float charger_target_voltage = 567.0f;
+float charger_target_current = 12.0f;
+bool charger_target_start = false;
+float charger_recv_voltage = 0.0f;
+float charger_recv_current = 0.0f;
+bool charger_recv_hw_fail = false;
+bool charger_recv_ov_temp = false;
+bool charger_recv_in_volt = false;
+bool charger_recv_starting_state = false;
+bool charger_recv_comm_state = false;
+uint32_t charger_recv_tick;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -198,6 +219,7 @@ void RelayControlThread();
 void FaultThread();
 void SdInitFile();
 void SdSaveProcess();
+void UpdateSoc();
 
 void ConsoleSimple();
 void CanbusThread();
@@ -235,17 +257,21 @@ void AnalogInit(ADC_HandleTypeDef *hadc, TIM_HandleTypeDef *htim)
 	analog.hadc = hadc;
 	analog.htim = htim;
 
-	HAL_ADC_Start_DMA(hadc, (uint32_t*)&analog.raw_buf[0], 1600);
+	HAL_ADC_Start_DMA(hadc, (uint32_t*)&analog.raw_buf[0], 4 * ADC_BUFFER_SIZE);
 	HAL_TIM_Base_Start(htim);
 }
 
 void AnalogThread()
 {
-	if (Analog_Get_Fill_Level() >= 20)
+	// ADC[0] - current reference voltage
+	// ADC[1] - current
+	// ADC[2] - hv voltage
+	// ADC[3] - hv voltage
+	if (Analog_Get_Fill_Level() >= 4 * ADC_AVERAGE_SAMPLES)
 	{
 		// calculate values
 		uint32_t sum[4] = {0};
-		for (int i = analog.raw_tail; i < analog.raw_tail+20; i+=4)
+		for (int i = analog.raw_tail; i < analog.raw_tail + 4 * ADC_AVERAGE_SAMPLES; i+=4)
 		{
 			sum[0] += analog.raw_buf[i];
 			sum[1] += analog.raw_buf[i+1];
@@ -258,8 +284,10 @@ void AnalogThread()
 		analog_avg[2] = sum[2] / 5;
 		analog_avg[3] = sum[3] / 5;
 
-		output_voltage = (uint16_t)((float)analog_avg[2]*COEFF_VOLT_PER_ADC);
-		//output_current = (int16_t)
+		output_voltage_volt = ((float)analog_avg[2] * COEFF_VOLT_PER_ADC);
+		// sensor is mounted backwards
+		int32_t current_adc = (int32_t)analog_avg[1] - (int32_t)analog_avg[0];
+		output_current_ampere = ((float)current_adc * COEFF_AMPERE_PER_ADC);
 //		uint16_t max = 0;
 //		for (int i = analog.raw_tail; i < analog.raw_tail+400; i+=4)
 //		{
@@ -270,17 +298,17 @@ void AnalogThread()
 //		analog_max = max;
 
 		// advance tail
-		analog.raw_tail += 20;
-		analog.raw_tail %= 1600;
+		analog.raw_tail += ADC_BUFFER_SIZE;
+		analog.raw_tail %= 4 * ADC_BUFFER_SIZE;
 	}
 }
 
 uint16_t Analog_Get_Fill_Level()
 {
-	uint32_t head = 1600 - analog.hadc->DMA_Handle->Instance->NDTR;
+	uint32_t head = 4 * ADC_BUFFER_SIZE - analog.hadc->DMA_Handle->Instance->NDTR;
 	uint32_t tail = analog.raw_tail;
 	if (head > tail) return head - tail;
-	else if (head < tail) return 1600 - tail + head;
+	else if (head < tail) return ADC_BUFFER_SIZE - tail + head;
 	else return 0;
 }
 
@@ -396,6 +424,7 @@ void MainInterruptCallback()
 	RelayControlThread();
 	AnalogThread();
 	LtcCommunicationThread();
+	UpdateSoc();
 	ConsoleSimple();
 	CanbusThread();
 
@@ -446,7 +475,7 @@ void RelayControlThread()
 		{
 			// switch on the precharge
 			AIR_PRECHARGE_Set(1);
-			next_tick = HAL_GetTick() + 10000;
+			next_tick = HAL_GetTick() + PRECHARGE_TIME_MS;
 			thread_state++;
 		}
 	}
@@ -503,7 +532,7 @@ void FaultThread()
 		// when stack fault occurred switch off the safety relay
 		if (LtcGetStackError() != 0)
 		{
-			FaultOutputSet(1);
+			//FaultOutputSet(1);
 			LedSet(1, 0);
 		}
 	}
@@ -513,22 +542,45 @@ void ConsoleSimple()
 {
 	static uint32_t last_data_tick = 0;
 	if (last_data_tick == stack_data.data_refresh_tick) return;
+
 	last_data_tick = stack_data.data_refresh_tick;
 
 	char string[1000], dis_char;
 	uint16_t n = 0;
-	for (int i = 0; i < 27; i++)
+//	for (int i = 0; i < 27; i++)
+//	{
+//		dis_char = ' ';
+//		if (stack_data.discharge[i] == 1) dis_char = 'D';
+//		n += sprintf(&string[n], "%d%c\t", stack_data.voltages[i], dis_char);
+//	}
+//	string[n++] = '\r';
+//	string[n++] = '\n';
+//	for (int i = 0; i < 9; i++)
+//	{
+//		n += sprintf(&string[n], "%d\t", stack_data.temperatures[i]);
+//	}
+//	string[n++] = '\r';
+//	string[n++] = '\n';
+	n += sprintf(&string[n], "-nr-\tc1\tc2\tc3\tc4\tc5\tc6\tc7\tc8\tc9\tt1\tt2\tt3\r\n");
+	for (int dev = 0; dev < LTCS_IN_STACK; dev++)
 	{
-		dis_char = ' ';
-		if (stack_data.discharge[i] == 1) dis_char = 'D';
-		n += sprintf(&string[n], "%d%c\t", stack_data.voltages[i], dis_char);
+		n += sprintf(&string[n], "-%02d-\t", dev+1);
+		for (int cv = 0; cv < 9; cv++)
+		{
+			dis_char = ' ';
+			if (stack_data.discharge[dev*9 + cv] == 1) dis_char = 'D';
+			n += sprintf(&string[n], "%d%c\t", stack_data.voltages[dev*9 + cv], dis_char);
+		}
+		for (int ct = 0; ct < 3; ct++)
+		{
+			n += sprintf(&string[n], "%d\t", stack_data.temperatures[dev*3 + ct]);
+		}
+		string[n++] = '\r';
+		string[n++] = '\n';
 	}
-	string[n++] = '\r';
-	string[n++] = '\n';
-	for (int i = 0; i < 9; i++)
-	{
-		n += sprintf(&string[n], "%d\t", stack_data.temperatures[i]);
-	}
+	dis_char = '%';
+	n += sprintf(&string[n], "SOC\t%d%c\r\n", (uint16_t)(stack_soc.get_SoC()*1000.0f), dis_char);
+
 	string[n++] = '\r';
 	string[n++] = '\n';
 
@@ -542,38 +594,98 @@ void CanbusThread()
 {
 	uint32_t next_send_tick = 20;
 
-	if (next_send_tick <= HAL_GetTick())
+	if (charger_mode == false)
 	{
-		next_send_tick += 20;
+		if (next_send_tick <= HAL_GetTick())
+		{
+			next_send_tick += 20;
 
-		uint8_t data[8] = {0};
-		// output current
-		data[0] = output_current;
-		data[1] = output_current >> 8;
-		// output voltage
-		uint16_t total_voltage = (uint16_t)(stack_data.total_voltage_mv / 100);
-		data[2] = total_voltage;
-		data[3] = total_voltage >> 8;
-		// temperature max
-		int16_t temp_can = stack_data.temperature_max / 5;
-		if (temp_can > 127) temp_can = 127;
-		data[4] = temp_can;
-		// state of charge
-		uint8_t soc_uint = (uint8_t)(stack_soc.get_SoC() * 100);
-		data[5] = soc_uint;
-		// status
-		data[6] = 0;
-		// errors
-		data[7] = 0;
+			uint8_t data[8] = {0};
+			// output current
+			int16_t out_cur = (int16_t)output_current_ampere * 10;
+			data[0] = out_cur;
+			data[1] = out_cur >> 8;
+			// output voltage
+			uint16_t total_voltage = (uint16_t)(stack_data.total_voltage_mv / 100);
+			data[2] = total_voltage;
+			data[3] = total_voltage >> 8;
+			// temperature max
+			int16_t temp_can = stack_data.temperature_max / 5;
+			if (temp_can > 127) temp_can = 127;
+			data[4] = (uint8_t)temp_can;
+			// state of charge
+			uint8_t soc_uint = (uint8_t)(stack_soc.get_SoC() * 100);
+			data[5] = soc_uint;
+			// status
+			data[6] = 0;
+			// errors
+			data[7] = 0;
 
-		CAN_TxHeaderTypeDef tx_header;
-		uint32_t mailbox;
-		tx_header.DLC = 8;
-		tx_header.RTR = CAN_RTR_DATA;
-		tx_header.StdId = 0x0E;
-		tx_header.IDE = CAN_ID_STD;
+			CAN_TxHeaderTypeDef tx_header;
+			uint32_t mailbox;
+			tx_header.DLC = 8;
+			tx_header.RTR = CAN_RTR_DATA;
+			tx_header.StdId = 0x0E;
+			tx_header.IDE = CAN_ID_STD;
 
-		HAL_CAN_AddTxMessage(&hcan1, &tx_header, data, &mailbox);
+			HAL_CAN_AddTxMessage(&hcan1, &tx_header, data, &mailbox);
+		}
+	}
+	else
+	{
+		if (next_send_tick <= HAL_GetTick())
+		{
+			next_send_tick += 100;
+
+			CAN_TxHeaderTypeDef tx_header;
+			uint32_t mailbox;
+			uint8_t data[8] = {0};
+			tx_header.DLC = 8;
+			tx_header.RTR = CAN_RTR_DATA;
+			tx_header.ExtId = 0x1806E5F4;
+			tx_header.IDE = CAN_ID_EXT;
+			data[0] = (uint16_t)(charger_target_voltage*10) >> 8;
+			data[1] = (uint16_t)(charger_target_voltage*10);
+			data[2] = (uint16_t)(charger_target_current*10) >> 8;
+			data[3] = (uint16_t)(charger_target_current);
+			data[4] = charger_target_start ? 0 : 1; // 0 - start charging, 1 - stop charging
+
+			HAL_CAN_AddTxMessage(&hcan1, &tx_header, data, &mailbox);
+		}
+		// reading charger response
+		while( HAL_CAN_GetRxFifoFillLevel(&hcan1, CAN_RX_FIFO0) != 0)
+		{
+			CAN_RxHeaderTypeDef rx_header;
+			uint8_t data[8];
+			HAL_CAN_GetRxMessage(&hcan1, CAN_RX_FIFO0, &rx_header, &data[0]);
+			if (rx_header.ExtId == 0x18ff50e5)
+			{
+				uint16_t voltage = ((uint16_t)(data[0])<<8) | ((uint16_t)data[1]);
+				uint16_t current = ((uint16_t)(data[2])<<8) | ((uint16_t)data[3]);
+				charger_recv_voltage = (float)voltage / 10.0f;
+				charger_recv_current = (float)current / 10.0f;
+				charger_recv_hw_fail = data[4] & 0x01;
+				charger_recv_ov_temp = data[4] & 0x02;
+				charger_recv_in_volt = data[4] & 0x04;
+				charger_recv_starting_state = data[4] & 0x08;
+				charger_recv_comm_state = data[4] & 0x10;
+				charger_recv_tick = HAL_GetTick();
+			}
+		}
+
+		if (HAL_GetTick() - charger_recv_tick >= CHARGER_CAN_TIMEOUT_MS)
+		{
+			charger_recv_voltage = 0.0f;
+			charger_recv_current = 0.0f;
+			charger_recv_hw_fail = false;
+			charger_recv_ov_temp = false;
+			charger_recv_in_volt = false;
+			charger_recv_starting_state = false;
+			charger_recv_comm_state = false;
+			charger_recv_tick = HAL_GetTick();
+			// fault state, stop charging
+			charger_target_start = false;
+		}
 	}
 }
 
@@ -588,21 +700,26 @@ void SocInit()
     stack_soc.set_time_sampling(1.0f / 20.0f); // 20Hz
     stack_soc.set_update_matrix();
     stack_soc.set_full_battery();
+}
 
-    // set from backup
-    htim1.Instance->CNT = 0;
-    test_time = 0;
-    stack_soc.update_SoC_based_on_voltage(3.8000f);
-    test_time =  htim1.Instance->CNT;
-    ;
-    htim1.Instance->CNT = 0;
-    stack_soc.update(0.0, 3.00);
-    stack_soc.update(0.10, 3.30);
-    stack_soc.update(0.0, 3.00);
-    stack_soc.update(0.10, 3.30);
-    test_time = htim1.Instance->CNT;
-    test_soc = stack_soc.get_SoC();
-    ;
+void UpdateSoc()
+{
+	static uint32_t last_voltage_tick = 0;
+	if (last_voltage_tick != stack_data.data_refresh_tick && stack_data.minimum_cell_no != -1)
+	{
+		last_voltage_tick = stack_data.data_refresh_tick;
+
+		float voltage = (float)stack_data.voltages[stack_data.minimum_cell_no] / 1000.0f;
+
+		if (!stack_soc_first_flag)
+		{
+			stack_soc_first_flag = true;
+			stack_soc.update_SoC_based_on_voltage(voltage);
+		}
+
+		// output current 20 Hz
+		stack_soc.update(output_current_ampere, voltage);
+	}
 }
 
 /* USER CODE END 0 */
@@ -630,7 +747,7 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+  HAL_Delay(1000);
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -651,7 +768,11 @@ int main(void)
 
   HAL_TIM_Base_Start(&htim1);
 
-  if (InputRead(1)) CAN_Init_Charger();
+  if (InputRead(1))
+  {
+	  CAN_Init_Charger();
+	  charger_mode = 0;
+  }
 
   SdInitFile();
 
@@ -670,15 +791,6 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  int i = 0;
-  while(1)
-  {
-	  HAL_Delay(200);
-	  memset(&stack_data.discharge[0], 0, 27);
-	  stack_data.discharge[i++] = 1;
-	  i %= 27;
-  }
-
   uint32_t next_tick = 1000;
   char test_string[1100] = {0};
   while (1)

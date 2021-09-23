@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 
-#define LTCS_IN_STACK	3
+#define LTCS_IN_STACK	15
 
 #define LTC_ADC_MD		0b11
 #define LTC_ADC_DCP		0b0
@@ -46,6 +46,8 @@ struct stack_data_type{
 	uint8_t error;
 	// measurement time
 	uint32_t data_refresh_tick;
+	// minimum cell
+	int minimum_cell_no;
 };
 
 void LtcInitPec15Table();
