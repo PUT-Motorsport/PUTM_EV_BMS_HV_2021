@@ -191,6 +191,8 @@ bool charger_recv_starting_state = false;
 bool charger_recv_comm_state = false;
 bool charger_comm_ok = false;
 uint32_t charger_recv_tick;
+
+uint32_t test_cnt1 = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -415,10 +417,12 @@ void MainInterruptCallback()
 {
 	static uint8_t thread_busy = 0;
 
-	if (thread_busy == 1) return;
+	if (thread_busy == 1)
+		return;
 
 	thread_busy = 1;
 
+	htim1.Instance->CNT = 0;
 	// control of the bms
 	RelayControlThread();
 	AnalogThread();
@@ -426,9 +430,9 @@ void MainInterruptCallback()
 	UpdateSoc();
 	ConsoleSimple();
 	CanbusThread();
-
 	FaultThread();
 
+	test_cnt1 = htim1.Instance->CNT;
 
 	thread_busy = 0;
 }
@@ -559,24 +563,10 @@ void ConsoleSimple()
 	//last_data_tick = stack_data.data_refresh_tick;
 	next_refresh_tick += 500;
 
-	char string[1000], dis_char;
+	static char string[2000], dis_char;
 	uint16_t n = 0;
-//	for (int i = 0; i < 27; i++)
-//	{
-//		dis_char = ' ';
-//		if (stack_data.discharge[i] == 1) dis_char = 'D';
-//		n += sprintf(&string[n], "%d%c\t", stack_data.voltages[i], dis_char);
-//	}
-//	string[n++] = '\r';
-//	string[n++] = '\n';
-//	for (int i = 0; i < 9; i++)
-//	{
-//		n += sprintf(&string[n], "%d\t", stack_data.temperatures[i]);
-//	}
-//	string[n++] = '\r';
-//	string[n++] = '\n';
-	// clear screen
-	//n += sprintf(&string[n], "\033[2J");
+
+	n += sprintf(&string[n], "%d\r\n", stack_data.data_refresh_tick);
 	// display CELLS AND TEMPERATURES
 	n += sprintf(&string[n], "-no-\tc1\tc2\tc3\tc4\tc5\tc6\tc7\tc8\tc9\tt1\tt2\tt3\r\n");
 	for (int dev = 0; dev < LTCS_IN_STACK; dev++)
@@ -1336,7 +1326,7 @@ static void MX_TIM9_Init(void)
   htim9.Instance = TIM9;
   htim9.Init.Prescaler = 179;
   htim9.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim9.Init.Period = 999;
+  htim9.Init.Period = 499;
   htim9.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim9.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim9) != HAL_OK)

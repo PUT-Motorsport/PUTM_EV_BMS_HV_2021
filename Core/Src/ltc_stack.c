@@ -119,12 +119,17 @@ void LtcInit(SPI_HandleTypeDef *ltc_hspi, GPIO_TypeDef *ltc_cs_gpio, uint16_t lt
  */
 void LtcWakeupSleep()
 {
-	uint8_t tab[2] = {0xff};
+	// RDCFGA command
+	tx_buffer[0] = 0;
+	tx_buffer[1] = 0b10;
+	uint16_t pec = LtcPec15(tx_buffer, 2);
+	tx_buffer[2] = pec >> 8;
+	tx_buffer[3] = pec;
 
 	for (int i = 0; i < 8; i++)
 	{
 		LtcCsPinSet(0);
-		HAL_SPI_Transmit(hspi, tab, 2, 1);
+		HAL_SPI_Transmit(hspi, tx_buffer, 4, 1);
 		LtcCsPinSet(1);
 		HAL_Delay(1);
 	}
@@ -135,10 +140,15 @@ void LtcWakeupSleep()
  */
 void LtcWakeupIdle()
 {
-	tx_buffer[0] = 0x00;
+	// RDCFGA command
+	tx_buffer[0] = 0;
+	tx_buffer[1] = 0b10;
+	uint16_t pec = LtcPec15(tx_buffer, 2);
+	tx_buffer[2] = pec >> 8;
+	tx_buffer[3] = pec;
 	LtcCsPinSet(0);
 	tx_busy = 1;
-	HAL_SPI_Transmit_IT(hspi, tx_buffer, 1);
+	HAL_SPI_Transmit_IT(hspi, tx_buffer, 4 + 8*LTCS_IN_STACK);
 }
 
 /*
@@ -388,7 +398,11 @@ void LtcStackDataReorder()
  */
 void LtcCommunicationThread()
 {
-	if (tx_busy == 1) return;
+	if (tx_busy == 1)
+	{
+		if (hspi->State != HAL_SPI_STATE_READY) return;
+		tx_busy = 0;
+	}
 
 	if (comm_state == 0)
 	{
@@ -397,8 +411,14 @@ void LtcCommunicationThread()
 			comm_next_refresh_tick += LTC_REFRESH_PERIOD;
 			LtcWakeupIdle();
 			comm_state++;
+			//comm_state = 100;
 		}
 	}
+//	else if (comm_state == 100)
+//	{
+//		LtcWakeupIdle();
+//		comm_state = 1;
+//	}
 	else if (comm_state == 1)
 	{
 		LtcSendConfig(0);
@@ -561,6 +581,36 @@ void LtcStackSummary()
 		if (stack_data.temperatures[ct] > temp_max) temp_max = stack_data.temperatures[ct];
 	}
 	stack_data.temperature_max = temp_max;
+}
+
+void LtcClearCellAdc()
+{
+	uint16_t pec;
+	uint16_t cmd = 0b11100010001;
+	tx_buffer[0] = cmd >> 8;
+	tx_buffer[1] = cmd;
+	pec = LtcPec15(&tx_buffer[0], 2);
+	tx_buffer[2] = pec >> 8;
+	tx_buffer[3] = pec;
+
+	LtcCsPinSet(0);
+	tx_busy = 1;
+	HAL_SPI_Transmit_IT(hspi, tx_buffer, 4);
+}
+
+void LtcClearGpioAdc()
+{
+	uint16_t pec;
+	uint16_t cmd = 0b11100010010;
+	tx_buffer[0] = cmd >> 8;
+	tx_buffer[1] = cmd;
+	pec = LtcPec15(&tx_buffer[0], 2);
+	tx_buffer[2] = pec >> 8;
+	tx_buffer[3] = pec;
+
+	LtcCsPinSet(0);
+	tx_busy = 1;
+	HAL_SPI_Transmit_IT(hspi, tx_buffer, 4);
 }
 
 #ifdef __cplusplus

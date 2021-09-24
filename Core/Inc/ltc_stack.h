@@ -90,6 +90,10 @@ uint8_t LtcGetStackError();
 
 void LtcStackSummary();
 
+void LtcClearCellAdc();
+
+void LtcClearGpioAdc();
+
 #ifdef __cplusplus
 }
 #endif
