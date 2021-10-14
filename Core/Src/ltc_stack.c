@@ -1,5 +1,6 @@
 #include "main.h"
 #include "ltc_stack.h"
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,7 +17,7 @@ static uint8_t comm_state;
 static uint32_t comm_next_tick;
 static uint32_t comm_next_refresh_tick;
 
-static uint8_t balance_flags[9 * LTCS_IN_STACK];
+//static uint8_t balance_flags[9 * LTCS_IN_STACK];
 
 static uint16_t pec15Table[256];
 static uint16_t CRC15_POLY = 0x4599;
@@ -280,7 +281,7 @@ void LtcStartReadCell(uint8_t group)
 void LtcStartReadGpio(uint8_t group)
 {
 	uint16_t pec;
-	uint16_t cmd;
+	uint16_t cmd = 0;
 	if (group == 0) cmd = 0b1100;
 	else if (group == 1) cmd = 0b1110;
 
@@ -435,8 +436,13 @@ void LtcCommunicationThread()
 		if (comm_next_tick <= HAL_GetTick())
 		{
 			LtcWakeupIdle();
-			comm_state++;
+			comm_state = 30;
 		}
+	}
+	else if (comm_state == 30)
+	{
+		LtcWakeupIdle();
+		comm_state = 4;
 	}
 	else if (comm_state == 4)
 	{
@@ -454,8 +460,19 @@ void LtcCommunicationThread()
 		if (comm_next_tick <= HAL_GetTick())
 		{
 			LtcWakeupIdle();
-			comm_state++;
+			comm_state = 60;
+			//comm_state++;
 		}
+	}
+	else if (comm_state == 60)
+	{
+		LtcWakeupIdle();
+		comm_state = 61;
+	}
+	else if (comm_state == 61)
+	{
+		LtcWakeupIdle();
+		comm_state = 7;
 	}
 	else if (comm_state == 7)
 	{
@@ -492,6 +509,7 @@ void LtcCommunicationThread()
 		stack_data.data_refresh_tick = HAL_GetTick();
 		LtcStackSummary();
 		LtcErrorCheck();
+		LtcStackBalance();
 		comm_state = 0;
 	}
 }
@@ -529,23 +547,29 @@ void LtcErrorCheck()
 {
 	for (int cv = 0; cv < 9*LTCS_IN_STACK; cv++)
 	{
-		if (stack_data.voltages[cv] > CELL_VOLTAGE_MAX || stack_data.voltages[cv] < CELL_VOLTAGE_MIN)
+		if (stack_data.voltages[cv] != 0)
 		{
-			if (stack_data.voltages_err_cntr[cv] < CELL_VOLTAGE_ERR_CNTR_THRESHOLD) stack_data.voltages_err_cntr[cv] += 1;
-			else stack_data.error |= CELL_ERROR_VOLTAGE_FLAG;
+			if (stack_data.voltages[cv] > CELL_VOLTAGE_MAX || stack_data.voltages[cv] < CELL_VOLTAGE_MIN)
+			{
+				if (stack_data.voltages_err_cntr[cv] < CELL_VOLTAGE_ERR_CNTR_THRESHOLD) stack_data.voltages_err_cntr[cv] += 1;
+				else stack_data.error |= CELL_ERROR_VOLTAGE_FLAG;
+			}
+			else if (stack_data.voltages_err_cntr[cv] > 0 && stack_data.voltages_err_cntr[cv] < CELL_VOLTAGE_ERR_CNTR_THRESHOLD)
+				stack_data.voltages_err_cntr[cv] -= 1;
 		}
-		else if (stack_data.voltages_err_cntr[cv] > 0 && stack_data.voltages_err_cntr[cv] < CELL_VOLTAGE_ERR_CNTR_THRESHOLD)
-			stack_data.voltages_err_cntr[cv] -= 1;
 	}
 	for (int ct = 0; ct < 3 * LTCS_IN_STACK; ct++)
 	{
-		if (stack_data.voltages[ct] > CELL_TEMPERATURE_MAX || stack_data.voltages[ct] < CELL_TEMPERATURE_MIN)
+		if (stack_data.temperatures[ct] > 0)
 		{
-			if (stack_data.temperatures_err_cntr[ct] < CELL_VOLTAGE_ERR_CNTR_THRESHOLD) stack_data.temperatures_err_cntr[ct] += 1;
-			else stack_data.error |= CELL_ERROR_TEMPERATURE_FLAG;
+			if (stack_data.temperatures[ct] > CELL_TEMPERATURE_MAX || stack_data.temperatures[ct] < CELL_TEMPERATURE_MIN)
+			{
+				if (stack_data.temperatures_err_cntr[ct] < CELL_TEMPERATURE_ERR_CNTR_THRESHOLD) stack_data.temperatures_err_cntr[ct] += 1;
+				else stack_data.error |= CELL_ERROR_TEMPERATURE_FLAG;
+			}
+			else if (stack_data.temperatures_err_cntr[ct] > 0 && stack_data.temperatures_err_cntr[ct] < CELL_TEMPERATURE_ERR_CNTR_THRESHOLD)
+				stack_data.temperatures_err_cntr[ct] -= 1;
 		}
-		else if (stack_data.temperatures_err_cntr[ct] > 0 && stack_data.temperatures_err_cntr[ct] < CELL_VOLTAGE_ERR_CNTR_THRESHOLD)
-			stack_data.temperatures_err_cntr[ct] -= 1;
 	}
 }
 
@@ -611,6 +635,57 @@ void LtcClearGpioAdc()
 	LtcCsPinSet(0);
 	tx_busy = 1;
 	HAL_SPI_Transmit_IT(hspi, tx_buffer, 4);
+}
+
+void LtcStackBalance()
+{
+	static uint32_t next_balance_tick = 0;
+	if (stack_data.balance_activation_flag == 1)
+	{
+		if (next_balance_tick < HAL_GetTick())
+		{
+			next_balance_tick = HAL_GetTick() + LTC_BALANCE_ROUND_PERIOD;
+			// find maximum
+			int max_no = -1;
+			uint16_t maximum = 0;
+			for (int cv = 0; cv < 9 * LTCS_IN_STACK; cv++)
+			{
+				if (stack_data.voltages[cv] > maximum)
+				{
+					maximum = stack_data.voltages[cv];
+					max_no = cv;
+				}
+			}
+			//
+			memset(stack_data.discharge, 0, 9 * LTCS_IN_STACK);
+			uint16_t minimum = stack_data.cell_minimum_voltage;
+			for (int cv = max_no; cv >= 0;)
+			{
+				if (stack_data.voltages[cv] > minimum)
+				{
+					// turn on discharge on selected cell
+					stack_data.discharge[cv] = 1;
+					cv -= 3;
+				}
+				else cv--;
+			}
+			//
+			for (int cv = max_no; cv < 9 * LTCS_IN_STACK && cv > 0;)
+			{
+				if (stack_data.voltages[cv] > minimum)
+				{
+					// turn on discharge on selected cell
+					stack_data.discharge[cv] = 1;
+					cv += 3;
+				}
+				else cv++;
+			}
+		}
+	}
+	else
+	{
+		memset(stack_data.discharge, 0, 9 * LTCS_IN_STACK);
+	}
 }
 
 #ifdef __cplusplus

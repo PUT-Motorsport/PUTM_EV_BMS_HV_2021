@@ -79,7 +79,7 @@ struct accumulator_result_type{
 //	uint8_t rx_ready;
 //};
 
-#define ADC_BUFFER_SIZE 800
+#define ADC_BUFFER_SIZE 1000
 struct analog_type{
 	ADC_HandleTypeDef *hadc;
 	TIM_HandleTypeDef *htim;
@@ -95,16 +95,18 @@ struct analog_type{
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define COEFF_VOLT_PER_ADC		1.7241f	// L 10k, 22k; H 200k, 10k
+//#define COEFF_VOLT_PER_ADC		1.7241f	// L 10k, 22k; H 200k, 10k
+#define	COEFF_VOLT_PER_ADC	0.17241f
 #define COEFF_AMPERE_PER_ADC	0.12891f
-#define ADC_AVERAGE_SAMPLES	200
-
+#define ADC_AVERAGE_SAMPLES		250
 
 #define CANBUS_MODE_CAR		0x01
 #define CANBUS_MODE_CHARGER	0x02
 
 #define PRECHARGE_TIME_MS	5000
 
+#define CHARGER_TARGET_VOLTAGE_MAX	567.0f
+#define CHARGER_TARGET_CURRENT_MAX	12.0f
 #define CHARGER_CAN_TIMEOUT_MS	10000
 /* USER CODE END PD */
 
@@ -141,6 +143,8 @@ uint16_t analog_avg[4];
 uint16_t analog_max;
 float output_voltage_volt;
 float output_current_ampere;
+float output_current_offset;
+bool current_offset_calculated = false;
 
 uint8_t sd_log_activated;
 char filename[50];
@@ -179,9 +183,10 @@ SoC_EKF stack_soc;
 bool stack_soc_first_flag = false;
 
 bool charger_mode = false;
-float charger_target_voltage = 567.0f;
-float charger_target_current = 12.0f;
+float charger_target_voltage = CHARGER_TARGET_VOLTAGE_MAX;
+float charger_target_current = CHARGER_TARGET_CURRENT_MAX;
 bool charger_target_start = false;
+bool charger_target_balance = false;
 float charger_recv_voltage = 0.0f;
 float charger_recv_current = 0.0f;
 bool charger_recv_hw_fail = false;
@@ -190,7 +195,7 @@ bool charger_recv_in_volt = false;
 bool charger_recv_starting_state = false;
 bool charger_recv_comm_state = false;
 bool charger_comm_ok = false;
-uint32_t charger_recv_tick;
+uint32_t charger_recv_tick = 0;
 
 uint32_t test_cnt1 = 0;
 /* USER CODE END PV */
@@ -235,8 +240,11 @@ void SocInit();
 
 void CAN_Init_Charger()
 {
+
+	HAL_CAN_Stop(&hcan1);
+	// 250 kbit/s
 	  hcan1.Instance = CAN1;
-	  hcan1.Init.Prescaler = 18;
+	  hcan1.Init.Prescaler = 36;
 	  hcan1.Init.Mode = CAN_MODE_NORMAL;
 	  hcan1.Init.SyncJumpWidth = CAN_SJW_1TQ;
 	  hcan1.Init.TimeSeg1 = CAN_BS1_3TQ;
@@ -251,6 +259,15 @@ void CAN_Init_Charger()
 	  {
 	    Error_Handler();
 	  }
+
+	  CAN_FilterTypeDef sfilter = {0};
+	  sfilter.FilterActivation = CAN_FILTER_ENABLE;
+	  sfilter.FilterFIFOAssignment = CAN_FILTER_FIFO0;
+	  sfilter.FilterMode = CAN_FILTERMODE_IDMASK;
+	  sfilter.FilterScale = CAN_FILTERSCALE_32BIT;
+	  HAL_CAN_ConfigFilter(&hcan1, &sfilter);
+
+	  HAL_CAN_Start(&hcan1);
 }
 
 void AnalogInit(ADC_HandleTypeDef *hadc, TIM_HandleTypeDef *htim)
@@ -272,6 +289,7 @@ void AnalogThread()
 	{
 		// calculate values
 		uint32_t sum[4] = {0};
+		float avg[4] = {0};
 		for (int i = analog.raw_tail; i < analog.raw_tail + 4 * ADC_AVERAGE_SAMPLES; i+=4)
 		{
 			sum[0] += analog.raw_buf[i];
@@ -280,26 +298,26 @@ void AnalogThread()
 			sum[3] += analog.raw_buf[i+3];
 		}
 
-		analog_avg[0] = sum[0] / 5;
-		analog_avg[1] = sum[1] / 5;
-		analog_avg[2] = sum[2] / 5;
-		analog_avg[3] = sum[3] / 5;
+		avg[0] = (float)sum[0] / (float)ADC_AVERAGE_SAMPLES;
+		avg[1] = (float)sum[1] / (float)ADC_AVERAGE_SAMPLES;
+		avg[2] = (float)sum[2] / (float)ADC_AVERAGE_SAMPLES;
+		avg[3] = (float)sum[3] / (float)ADC_AVERAGE_SAMPLES;
 
-		output_voltage_volt = ((float)analog_avg[2] * COEFF_VOLT_PER_ADC);
+		output_voltage_volt = (avg[2] * COEFF_VOLT_PER_ADC);
 		// sensor is mounted backwards
-		int32_t current_adc = (int32_t)analog_avg[1] - (int32_t)analog_avg[0];
-		output_current_ampere = ((float)current_adc * COEFF_AMPERE_PER_ADC);
-//		uint16_t max = 0;
-//		for (int i = analog.raw_tail; i < analog.raw_tail+400; i+=4)
-//		{
-//			if (analog.raw_buf[i+1] > max)
-//				max = analog.raw_buf[i+1];
-//
-//		}
-//		analog_max = max;
+		//int32_t current_adc = (int32_t)analog_avg[1] - (int32_t)analog_avg[0];
+		output_current_ampere = ((avg[0] - avg[1]) * COEFF_AMPERE_PER_ADC);
+		// offset
+		if (!current_offset_calculated)
+		{
+			output_current_offset = output_current_ampere;
+			current_offset_calculated = true;
+		}
+		// update with offset
+		output_current_ampere -= output_current_offset;
 
 		// advance tail
-		analog.raw_tail += ADC_BUFFER_SIZE;
+		analog.raw_tail += ADC_AVERAGE_SAMPLES * 4;
 		analog.raw_tail %= 4 * ADC_BUFFER_SIZE;
 	}
 }
@@ -431,6 +449,7 @@ void MainInterruptCallback()
 	ConsoleSimple();
 	CanbusThread();
 	FaultThread();
+	ConsoleRxThread();
 
 	test_cnt1 = htim1.Instance->CNT;
 
@@ -533,9 +552,9 @@ void FaultThread()
 	else
 	{
 		// when stack fault occurred switch off the safety relay
-		if (LtcGetStackError() != 0)
+		if ((LtcGetStackError() & CELL_ERROR_TEMPERATURE_FLAG) != 0)
 		{
-			//FaultOutputSet(1);
+			FaultOutputSet(1);
 			LedSet(1, 0);
 		}
 	}
@@ -550,6 +569,16 @@ void ConsoleRxThread()
 	{
 		if (strcmp(line, "charger_start\r\n") == 0) charger_target_start = true;
 		else if (strcmp(line, "charger_stop\r\n") == 0) charger_target_start = false;
+		else if (strcmp(line, "charger_current 12\r\n") == 0) charger_target_current = 12.0f;
+		else if (strcmp(line, "charger_current 2\r\n") == 0) charger_target_current = 2.0f;
+		else if (strcmp(line, "charger_mode\r\n") == 0)
+		{
+			charger_mode = true;
+			CAN_Init_Charger();
+			HAL_CAN_Start(&hcan1);
+		}
+		else if (strcmp(line, "balance_on\r\n") == 0) stack_data.balance_activation_flag = 1;
+		else if (strcmp(line, "balance_off\r\n") == 0) stack_data.balance_activation_flag = 0;
 	}
 
 	if (line != NULL) free(line);
@@ -588,7 +617,7 @@ void ConsoleSimple()
 	dis_char = '%';
 	n += sprintf(&string[n], "SOC\t%d.%02d%c\r\n", (uint16_t)(stack_soc.get_SoC()*100.0f), ((uint16_t)(stack_soc.get_SoC()*10000.0f))%100, dis_char);
 	if (LtcGetStackError() != 0)
-		n += sprintf(&string[n], "ERR\t%d\r\n", LtcGetStackError());
+		n += sprintf(&string[n], "!!! ERR\t%d\r\n", LtcGetStackError());
 	n += sprintf(&string[n], "ADC\t");
 	n += sprintf(&string[n], "%d.%01dV\t", (uint16_t)output_voltage_volt, ((uint16_t)output_voltage_volt * 10) % 10);
 	n += sprintf(&string[n], "%d.%01dA", (int16_t)output_current_ampere, ((int16_t)output_current_ampere * 10) % 10);
@@ -679,7 +708,7 @@ void CanbusThread()
 			data[0] = (uint16_t)(charger_target_voltage*10) >> 8;
 			data[1] = (uint16_t)(charger_target_voltage*10);
 			data[2] = (uint16_t)(charger_target_current*10) >> 8;
-			data[3] = (uint16_t)(charger_target_current);
+			data[3] = (uint16_t)(charger_target_current*10);
 			data[4] = charger_target_start ? 0 : 1; // 0 - start charging, 1 - stop charging
 
 			HAL_CAN_AddTxMessage(&hcan1, &tx_header, data, &mailbox);
@@ -805,7 +834,7 @@ int main(void)
   if (InputRead(1))
   {
 	  CAN_Init_Charger();
-	  charger_mode = 0;
+	  charger_mode = true;
   }
 
   SdInitFile();
@@ -820,6 +849,8 @@ int main(void)
 
   // timer for main threading
   HAL_TIM_Base_Start_IT(&htim9);
+
+  HAL_CAN_Start(&hcan1);
 
   /* USER CODE END 2 */
 

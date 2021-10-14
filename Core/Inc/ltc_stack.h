@@ -17,18 +17,20 @@ extern "C" {
 #define LTC_CFG_GPIO	0b11111
 
 #define LTC_REFRESH_PERIOD	50
-#define LTC_ADC_DELAY	6
+#define LTC_ADC_DELAY	8
 
 #define CELL_VOLTAGE_MIN	3000
 #define CELL_VOLTAGE_MAX	4250
-#define CELL_TEMPERATURE_MIN	100
-#define CELL_TEMPERATURE_MAX	600
+#define CELL_TEMPERATURE_MIN	40
+#define CELL_TEMPERATURE_MAX	550
 
-#define CELL_VOLTAGE_ERR_CNTR_THRESHOLD		10
+#define CELL_VOLTAGE_ERR_CNTR_THRESHOLD		20
 #define CELL_TEMPERATURE_ERR_CNTR_THRESHOLD	20
 
 #define CELL_ERROR_VOLTAGE_FLAG			0x01
 #define CELL_ERROR_TEMPERATURE_FLAG		0x02
+
+#define LTC_BALANCE_ROUND_PERIOD	60000
 
 struct stack_data_type{
 	// measurements
@@ -48,6 +50,8 @@ struct stack_data_type{
 	uint32_t data_refresh_tick;
 	// minimum cell
 	int minimum_cell_no;
+	// balancing
+	uint8_t balance_activation_flag;
 };
 
 void LtcInitPec15Table();
@@ -93,6 +97,8 @@ void LtcStackSummary();
 void LtcClearCellAdc();
 
 void LtcClearGpioAdc();
+
+void LtcStackBalance();
 
 #ifdef __cplusplus
 }

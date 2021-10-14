@@ -96,7 +96,8 @@ char* SerialportReadLine(uint16_t *length)
 			len++;
 			if (serialport.rx_buffer[search_head] == '\n')
 			{
-				retline = malloc(len);
+				retline = malloc(len+1);
+				memset(retline, 0, len+1);
 				if (retline != NULL)
 				{
 					for(int i = 0; i < len; i++)
