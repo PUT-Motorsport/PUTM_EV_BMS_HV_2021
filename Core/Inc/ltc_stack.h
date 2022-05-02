@@ -3,9 +3,7 @@
 
 #include "main.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+
 
 
 #define LTCS_IN_STACK	15
@@ -16,8 +14,8 @@ extern "C" {
 #define LTC_CFG_ADCOPT	0b1
 #define LTC_CFG_GPIO	0b11111
 
-#define LTC_REFRESH_PERIOD	50
-#define LTC_ADC_DELAY	8
+#define LTC_REFRESH_PERIOD	100 //50
+#define LTC_ADC_DELAY	20 //8
 
 #define CELL_VOLTAGE_MIN	3000
 #define CELL_VOLTAGE_MAX	4250
@@ -100,9 +98,7 @@ void LtcClearGpioAdc();
 
 void LtcStackBalance();
 
-#ifdef __cplusplus
-}
-#endif
+
 
 #endif
 

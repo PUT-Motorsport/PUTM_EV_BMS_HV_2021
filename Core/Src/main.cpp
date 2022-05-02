@@ -453,6 +453,11 @@ void MainInterruptCallback()
 
 	test_cnt1 = htim1.Instance->CNT;
 
+	if (stack_data.voltages[8] == 0 || stack_data.voltages[6] == 0)
+	{
+		LedSet(2, 1);
+	}
+
 	thread_busy = 0;
 }
 
@@ -817,7 +822,7 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_ADC1_Init();
-  MX_CAN1_Init();
+  MX_CAN1_Init(); //if powered by USB, error occurs
   MX_SDIO_SD_Init();
   MX_SPI1_Init();
   MX_SPI2_Init();
@@ -828,7 +833,6 @@ int main(void)
   MX_TIM1_Init();
   MX_TIM9_Init();
   /* USER CODE BEGIN 2 */
-
   HAL_TIM_Base_Start(&htim1);
 
   if (InputRead(1))
@@ -1064,7 +1068,7 @@ static void MX_CAN1_Init(void)
   hcan1.Init.TimeSeg1 = CAN_BS1_3TQ;
   hcan1.Init.TimeSeg2 = CAN_BS2_1TQ;
   hcan1.Init.TimeTriggeredMode = DISABLE;
-  hcan1.Init.AutoBusOff = DISABLE;
+  hcan1.Init.AutoBusOff = ENABLE;
   hcan1.Init.AutoWakeUp = DISABLE;
   hcan1.Init.AutoRetransmission = DISABLE;
   hcan1.Init.ReceiveFifoLocked = DISABLE;
@@ -1510,7 +1514,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 {
-	LtcTxCallback();
+	//LtcTxCallback();
 }
 
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
@@ -1527,6 +1531,7 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
+	return;
   __disable_irq();
   while (1)
   {
