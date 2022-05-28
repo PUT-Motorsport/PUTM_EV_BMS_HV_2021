@@ -29,6 +29,9 @@
 #include "stdio.h"
 #include "ltc_stack.h"
 #include "soc_ekf.h"
+
+#include "PUTM_EV_CAN_LIBRARY/lib/can_interface.hpp"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -198,6 +201,10 @@ bool charger_comm_ok = false;
 uint32_t charger_recv_tick = 0;
 
 uint32_t test_cnt1 = 0;
+
+PUTM_CAN::BMS_HV_states device_state;
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -476,6 +483,7 @@ void RelayControlThread()
 	// switch relays off when safety is missing
 	if (thread_state != 0 && safety_state == 0)
 	{
+		device_state = PUTM_CAN::BMS_HV_states::AIR_opened;
 		// switch AIRs off
 		AIR_MINUS_Set(0);
 		AIR_PLUS_Set(0);
@@ -508,6 +516,7 @@ void RelayControlThread()
 	}
 	else if (thread_state == 2)
 	{
+		device_state = PUTM_CAN::BMS_HV_states::Precharge;
 		// wait - the capacitors are precharging
 		if (next_tick <= HAL_GetTick())
 		{
@@ -530,6 +539,7 @@ void RelayControlThread()
 	else if (thread_state == 4)
 	{
 		// full on
+		device_state = PUTM_CAN::BMS_HV_states::AIR_closed;
 	}
 }
 
@@ -694,7 +704,31 @@ void CanbusThread()
 			tx_header.StdId = 0x0E;
 			tx_header.IDE = CAN_ID_STD;
 
-			HAL_CAN_AddTxMessage(&hcan1, &tx_header, data, &mailbox);
+
+			PUTM_CAN::BMS_HV_main main_frame;
+			main_frame.voltage_sum = (int16_t)(stack_data.total_voltage_mv / 100);
+			main_frame.current = (int16_t)(output_current_ampere * 10);
+			main_frame.soc = (uint8_t)(stack_soc.get_SoC() * 100);
+			main_frame.temp_max  = stack_data.temperature_max / 5;
+
+			float t_avg = 0;
+			for(const auto &temp : stack_data.temperatures){
+				t_avg += static_cast<float>(temp);
+			}
+
+			main_frame.temp_avg = t_avg / (3.0f * LTCS_IN_STACK);
+
+			if(stack_data.error == CELL_ERROR_TEMPERATURE_FLAG){
+				main_frame.device_state = PUTM_CAN::BMS_HV_states::Temp_high;
+			}
+			else {
+				main_frame.device_state = device_state;
+			}
+
+			auto mess = PUTM_CAN::Can_tx_message<PUTM_CAN::BMS_HV_main>(main_frame ,PUTM_CAN::can_tx_header_BMS_HV_MAIN);
+			mess.send(hcan1);
+
+			//HAL_CAN_AddTxMessage(&hcan1, &tx_header, data, &mailbox);
 		}
 	}
 	else
@@ -777,7 +811,8 @@ void UpdateSoc()
 	{
 		last_voltage_tick = stack_data.data_refresh_tick;
 
-		float voltage = (float)stack_data.voltages[stack_data.minimum_cell_no] / 1000.0f;
+		// FIXME calc soc of first cell insted of stack_data.minimum_cell_no
+		float voltage = (float)stack_data.voltages[0] / 1000.0f;
 
 		if (!stack_soc_first_flag)
 		{
