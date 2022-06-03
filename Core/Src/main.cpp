@@ -605,7 +605,7 @@ void ConsoleSimple()
 	if (next_refresh_tick > HAL_GetTick()) return;
 
 	//last_data_tick = stack_data.data_refresh_tick;
-	next_refresh_tick += 500;
+	next_refresh_tick += 1000; //500
 
 	static char string[2000], dis_char;
 	uint16_t n = 0;
@@ -857,7 +857,7 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_ADC1_Init();
-  MX_CAN1_Init(); //if powered by USB, error occurs
+  MX_CAN1_Init();
   MX_SDIO_SD_Init();
   MX_SPI1_Init();
   MX_SPI2_Init();
@@ -896,7 +896,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   uint32_t dis_test_next = 2000, dis = 0;
-  while (1)
+/*  while (1)
   {
 	  if (dis_test_next < HAL_GetTick() && false)
 	  {
@@ -908,7 +908,7 @@ int main(void)
 			  stack_data.discharge[i*9+dis] = 1;
 	  }
   }
-
+*/
   uint32_t next_tick = 1000;
   char test_string[1100] = {0};
   while (1)
@@ -1103,7 +1103,7 @@ static void MX_CAN1_Init(void)
   hcan1.Init.TimeSeg1 = CAN_BS1_3TQ;
   hcan1.Init.TimeSeg2 = CAN_BS2_1TQ;
   hcan1.Init.TimeTriggeredMode = DISABLE;
-  hcan1.Init.AutoBusOff = ENABLE;
+  hcan1.Init.AutoBusOff = DISABLE;
   hcan1.Init.AutoWakeUp = DISABLE;
   hcan1.Init.AutoRetransmission = DISABLE;
   hcan1.Init.ReceiveFifoLocked = DISABLE;
@@ -1396,7 +1396,7 @@ static void MX_TIM9_Init(void)
   htim9.Instance = TIM9;
   htim9.Init.Prescaler = 179;
   htim9.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim9.Init.Period = 499;
+  htim9.Init.Period = 999;
   htim9.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim9.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim9) != HAL_OK)
@@ -1430,7 +1430,7 @@ static void MX_USART1_UART_Init(void)
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
+  huart1.Init.BaudRate = 38400;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
