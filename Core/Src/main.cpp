@@ -676,9 +676,15 @@ void CanbusThread()
 		{
 			next_send_tick += 20;
 
-			PUTM_CAN::BMS_HV_main main_frame;
+			PUTM_CAN::BMS_HV_main main_frame{};
+
 			main_frame.voltage_sum = (uint16_t)(stack_data.total_voltage_mv / 10);
-			main_frame.current = (int16_t)(output_current_ampere * 100);
+
+			float batt_current_temp = output_current_ampere * 100;
+			if(batt_current_temp < 320'00 and batt_current_temp > -320'00){
+				main_frame.current = (int16_t)(batt_current_temp);
+			}
+
 			main_frame.soc = (uint16_t)(stack_soc.get_SoC() * 1000);
 			main_frame.temp_max  = (uint8_t)(stack_data.temperature_max / 10);
 
