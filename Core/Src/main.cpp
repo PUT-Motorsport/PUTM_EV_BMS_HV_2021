@@ -676,47 +676,18 @@ void CanbusThread()
 		{
 			next_send_tick += 20;
 
-			uint8_t data[8] = {0};
-			// output current
-			int16_t out_cur = (int16_t)output_current_ampere * 10;
-			data[0] = out_cur;
-			data[1] = out_cur >> 8;
-			// output voltage
-			uint16_t total_voltage = (uint16_t)(stack_data.total_voltage_mv / 100);
-			data[2] = total_voltage;
-			data[3] = total_voltage >> 8;
-			// temperature max
-			int16_t temp_can = stack_data.temperature_max / 5;
-			if (temp_can > 127) temp_can = 127;
-			data[4] = (uint8_t)temp_can;
-			// state of charge
-			uint8_t soc_uint = (uint8_t)(stack_soc.get_SoC() * 100);
-			data[5] = soc_uint;
-			// status
-			data[6] = 0;
-			// errors
-			data[7] = 0;
-
-			CAN_TxHeaderTypeDef tx_header;
-			uint32_t mailbox;
-			tx_header.DLC = 8;
-			tx_header.RTR = CAN_RTR_DATA;
-			tx_header.StdId = 0x0E;
-			tx_header.IDE = CAN_ID_STD;
-
-
 			PUTM_CAN::BMS_HV_main main_frame;
-			main_frame.voltage_sum = (int16_t)(stack_data.total_voltage_mv / 100);
-			main_frame.current = (int16_t)(output_current_ampere * 10);
-			main_frame.soc = (uint8_t)(stack_soc.get_SoC() * 100);
-			main_frame.temp_max  = stack_data.temperature_max / 5;
+			main_frame.voltage_sum = (uint16_t)(stack_data.total_voltage_mv / 10);
+			main_frame.current = (int16_t)(output_current_ampere * 100);
+			main_frame.soc = (uint16_t)(stack_soc.get_SoC() * 1000);
+			main_frame.temp_max  = (uint8_t)(stack_data.temperature_max / 10);
 
 			float t_avg = 0;
 			for(const auto &temp : stack_data.temperatures){
 				t_avg += static_cast<float>(temp);
 			}
 
-			main_frame.temp_avg = t_avg / (3.0f * LTCS_IN_STACK);
+			main_frame.temp_avg = (uint8_t)(t_avg / (3.0f * LTCS_IN_STACK) / 10);
 
 			if(stack_data.error == CELL_ERROR_TEMPERATURE_FLAG){
 				main_frame.device_state = PUTM_CAN::BMS_HV_states::Temp_high;
@@ -728,7 +699,6 @@ void CanbusThread()
 			auto mess = PUTM_CAN::Can_tx_message<PUTM_CAN::BMS_HV_main>(main_frame ,PUTM_CAN::can_tx_header_BMS_HV_MAIN);
 			mess.send(hcan1);
 
-			//HAL_CAN_AddTxMessage(&hcan1, &tx_header, data, &mailbox);
 		}
 	}
 	else
